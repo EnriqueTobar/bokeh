@@ -1,8 +1,8 @@
 import {SpatialIndex} from "core/util/spatial"
 import {Glyph, GlyphView, GlyphData} from "./glyph"
 import {generic_area_legend} from "./utils"
-import {min, max, copy, find_last_index} from "core/util/array"
-import {sum} from "core/util/arrayable"
+import {find_last_index} from "core/util/array"
+import {copy, minmax, sum, splice, filter} from "core/util/arrayable"
 import {Arrayable, Rect} from "core/types"
 import {PointGeometry, RectGeometry} from "core/geometry"
 import {Context2d} from "core/util/canvas"
@@ -14,14 +14,14 @@ import {Selection} from "../selections/selection"
 import {unreachable} from "core/util/assert"
 
 export interface PatchesData extends GlyphData {
-  _xs: Arrayable<Arrayable<number>>
-  _ys: Arrayable<Arrayable<number>>
+  _xs: Arrayable<number>[]
+  _ys: Arrayable<number>[]
 
-  sxs: Arrayable<Arrayable<number>>
-  sys: Arrayable<Arrayable<number>>
+  sxs: Arrayable<number>[]
+  sys: Arrayable<number>[]
 
-  sxss: number[][][]
-  syss: number[][][]
+  sxss: Arrayable<number>[][]
+  syss: Arrayable<number>[][]
 }
 
 export interface PatchesView extends PatchesData {}
@@ -30,7 +30,7 @@ export class PatchesView extends GlyphView {
   model: Patches
   visuals: Patches.Visuals
 
-  private _build_discontinuous_object(nanned_qs: number[][]): number[][][] {
+  private _build_discontinuous_object(nanned_qs: Arrayable<number>[]): Arrayable<number>[][] {
     // _s is this.xs, this.ys, this.sxs, this.sys
     // an object of n 1-d arrays in either data or screen units
     //
@@ -47,7 +47,7 @@ export class PatchesView extends GlyphView {
     //   1: [[x21, x22, x23]],
     //   2: [[x31],[x32]]
     // }
-    const ds: number[][][] = []
+    const ds: Arrayable<number>[][] = []
     for (let i = 0, end = nanned_qs.length; i < end; i++) {
       ds[i] = []
       let qs = copy(nanned_qs[i])
@@ -56,13 +56,13 @@ export class PatchesView extends GlyphView {
 
         let qs_part
         if (nan_index >= 0)
-          qs_part = qs.splice(nan_index)
+          qs_part = splice(qs, nan_index)
         else {
           qs_part = qs
           qs = []
         }
 
-        const denanned = qs_part.filter((q) => !isNaN(q))
+        const denanned = filter(qs_part, (q) => !isNaN(q))
         ds[i].push(denanned)
       }
     }
@@ -70,8 +70,8 @@ export class PatchesView extends GlyphView {
   }
 
   protected _index_data(): SpatialIndex {
-    const xss = this._build_discontinuous_object(this._xs as any) // XXX
-    const yss = this._build_discontinuous_object(this._ys as any) // XXX
+    const xss = this._build_discontinuous_object(this._xs)
+    const yss = this._build_discontinuous_object(this._ys)
 
     const points = []
     for (let i = 0, end = this._xs.length; i < end; i++) {
@@ -82,7 +82,10 @@ export class PatchesView extends GlyphView {
         if (xs.length == 0)
           continue
 
-        points.push({x0: min(xs), y0: min(ys), x1: max(xs), y1: max(ys), i})
+        const [x0, x1] = minmax(xs)
+        const [y0, y1] = minmax(ys)
+
+        points.push({x0, y0, x1, y1, i})
       }
     }
 
@@ -123,8 +126,8 @@ export class PatchesView extends GlyphView {
   protected _render(ctx: Context2d, indices: number[], {sxs, sys}: PatchesData): void {
     // this.sxss and this.syss are used by _hit_point and sxc, syc
     // This is the earliest we can build them, and only build them once
-    this.sxss = this._build_discontinuous_object(sxs as any) // XXX
-    this.syss = this._build_discontinuous_object(sys as any) // XXX
+    this.sxss = this._build_discontinuous_object(sxs)
+    this.syss = this._build_discontinuous_object(sys)
 
     for (const i of indices) {
       const [sx, sy] = [sxs[i], sys[i]]
